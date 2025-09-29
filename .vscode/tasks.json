@@ -1,0 +1,87 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Deploy VM with Encryption and Trusted Launch",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"Deploy-VM.ps1",
+				"-ResourceGroupName",
+				"${input:resourceGroupName}",
+				"-SubscriptionId",
+				"3bc8f069-65c7-4d08-b8de-534c20e56c38",
+				"-Location",
+				"East US"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Setup Prerequisites",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"Setup-Prerequisites.ps1",
+				"-SubscriptionId",
+				"3bc8f069-65c7-4d08-b8de-534c20e56c38",
+				"-ResourceGroupName",
+				"${input:resourceGroupName}",
+				"-KeyVaultName",
+				"kvimagetest",
+				"-DiskEncryptionKeyName",
+				"imagetest",
+				"-ComputeGalleryName",
+				"central",
+				"-ImageDefinitionName",
+				"imagetest",
+				"-Location",
+				"East US"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Create Image from VM",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"Create-Image.ps1",
+				"-ResourceGroupName",
+				"${input:resourceGroupName}",
+				"-SubscriptionId",
+				"3bc8f069-65c7-4d08-b8de-534c20e56c38",
+				"-VmName",
+				"${input:vmName}"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	],
+	"inputs": [
+		{
+			"id": "resourceGroupName",
+			"description": "Enter the resource group name",
+			"default": "RG_Central",
+			"type": "promptString"
+		},
+		{
+			"id": "vmName",
+			"description": "Enter the VM name to capture image from",
+			"default": "vm-marketplace-encrypted",
+			"type": "promptString"
+		}
+	]
+}

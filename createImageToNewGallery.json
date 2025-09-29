@@ -1,0 +1,184 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Template to create compute gallery, capture VM image, and create image version"
+  },
+  "parameters": {
+    "sourceVmName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the source virtual machine to capture image from"
+      }
+    },
+    "sourceVmResourceGroup": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group of the source VM"
+      }
+    },
+    "newGalleryName": {
+      "type": "string",
+      "defaultValue": "acg_avd",
+      "metadata": {
+        "description": "Name of the new compute gallery to create"
+      }
+    },
+    "newGalleryResourceGroup": {
+      "type": "string",
+      "defaultValue": "RG_AVD",
+      "metadata": {
+        "description": "Resource group where new gallery will be created"
+      }
+    },
+    "imageDefinitionName": {
+      "type": "string",
+      "defaultValue": "windows-trusted-launch",
+      "metadata": {
+        "description": "Name of the image definition to create"
+      }
+    },
+    "imageVersionName": {
+      "type": "string",
+      "defaultValue": "1.0.0",
+      "metadata": {
+        "description": "Version of the image to create"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for resources"
+      }
+    },
+    "publisher": {
+      "type": "string",
+      "defaultValue": "MyOrganization",
+      "metadata": {
+        "description": "Publisher name for the image definition"
+      }
+    },
+    "offer": {
+      "type": "string",
+      "defaultValue": "WindowsServer",
+      "metadata": {
+        "description": "Offer name for the image definition"
+      }
+    },
+    "sku": {
+      "type": "string",
+      "defaultValue": "2022-datacenter-trusted",
+      "metadata": {
+        "description": "SKU name for the image definition"
+      }
+    },
+    "replicaCount": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Number of replicas for the image version"
+      }
+    }
+  },
+  "variables": {
+    "sourceVmResourceId": "[resourceId(parameters('sourceVmResourceGroup'), 'Microsoft.Compute/virtualMachines', parameters('sourceVmName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Compute/galleries",
+      "apiVersion": "2021-10-01",
+      "name": "[parameters('newGalleryName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "description": "Compute gallery for AVD custom images with Trusted Launch",
+        "identifier": {}
+      }
+    },
+    {
+      "type": "Microsoft.Compute/galleries/images",
+      "apiVersion": "2021-10-01",
+      "name": "[concat(parameters('newGalleryName'), '/', parameters('imageDefinitionName'))]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/galleries', parameters('newGalleryName'))]"
+      ],
+      "properties": {
+        "osType": "Windows",
+        "osState": "Generalized",
+        "hyperVGeneration": "V2",
+        "features": [
+          {
+            "name": "SecurityType",
+            "value": "TrustedLaunch"
+          }
+        ],
+        "identifier": {
+          "publisher": "[parameters('publisher')]",
+          "offer": "[parameters('offer')]",
+          "sku": "[parameters('sku')]"
+        },
+        "recommended": {
+          "vCPUs": {
+            "min": 2,
+            "max": 32
+          },
+          "memory": {
+            "min": 4,
+            "max": 128
+          }
+        },
+        "description": "Windows Server 2022 with Trusted Launch for AVD"
+      }
+    },
+    {
+      "type": "Microsoft.Compute/galleries/images/versions",
+      "apiVersion": "2021-10-01",
+      "name": "[concat(parameters('newGalleryName'), '/', parameters('imageDefinitionName'), '/', parameters('imageVersionName'))]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/galleries/images', parameters('newGalleryName'), parameters('imageDefinitionName'))]"
+      ],
+      "properties": {
+        "publishingProfile": {
+          "replicaCount": "[parameters('replicaCount')]",
+          "excludeFromLatest": false,
+          "targetRegions": [
+            {
+              "name": "[parameters('location')]",
+              "regionalReplicaCount": "[parameters('replicaCount')]",
+              "storageAccountType": "Premium_LRS"
+            }
+          ]
+        },
+        "storageProfile": {
+          "source": {
+            "id": "[variables('sourceVmResourceId')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "galleryResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/galleries', parameters('newGalleryName'))]"
+    },
+    "imageDefinitionResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/galleries/images', parameters('newGalleryName'), parameters('imageDefinitionName'))]"
+    },
+    "imageVersionResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/galleries/images/versions', parameters('newGalleryName'), parameters('imageDefinitionName'), parameters('imageVersionName'))]"
+    },
+    "imageVersionName": {
+      "type": "string",
+      "value": "[parameters('imageVersionName')]"
+    },
+    "galleryName": {
+      "type": "string",
+      "value": "[parameters('newGalleryName')]"
+    }
+  }
+}

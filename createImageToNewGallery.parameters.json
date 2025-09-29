@@ -1,0 +1,36 @@
+{
+    "$schema":  "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion":  "1.0.0.0",
+    "parameters":  {
+                       "sourceVmName":  {
+                                            "value":  "vm-trusted"
+                                        },
+                       "sourceVmResourceGroup":  {
+                                                     "value":  "RG_Central"
+                                                 },
+                       "newGalleryName":  {
+                                              "value":  "acg_avd"
+                                          },
+                       "newGalleryResourceGroup":  {
+                                                       "value":  "RG_AVD"
+                                                   },
+                       "imageDefinitionName":  {
+                                                   "value":  "windows-trusted-launch"
+                                               },
+                       "imageVersionName":  {
+                                                "value":  "1.0.0"
+                                            },
+                       "publisher":  {
+                                         "value":  "MyOrganization"
+                                     },
+                       "offer":  {
+                                     "value":  "WindowsServer"
+                                 },
+                       "sku":  {
+                                   "value":  "2022-datacenter-trusted"
+                               },
+                       "replicaCount":  {
+                                            "value":  1
+                                        }
+                   }
+}

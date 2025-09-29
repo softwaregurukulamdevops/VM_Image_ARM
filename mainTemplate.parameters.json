@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmName": {
+      "value": "vm-marketplace-encrypted"
+    },
+    "vmSize": {
+      "value": "Standard_D2s_v3"
+    },
+    "adminUsername": {
+      "value": "azureuser"
+    },
+    "adminPassword": {
+      "value": "P@ssw0rd123!"
+    },
+    "marketplaceImageOffer": {
+      "value": "WindowsServer"
+    },
+    "marketplaceImagePublisher": {
+      "value": "MicrosoftWindowsServer"
+    },
+    "marketplaceImageSku": {
+      "value": "2022-datacenter-g2"
+    },
+    "keyVaultName": {
+      "value": "kvimagetest"
+    },
+    "keyVaultResourceGroup": {
+      "value": "RG_Central"
+    },
+    "diskEncryptionKeyName": {
+      "value": "imagetest"
+    },
+    "computeGalleryName": {
+      "value": "central"
+    },
+    "computeGalleryResourceGroup": {
+      "value": "RG_Central"
+    },
+    "imageDefinitionName": {
+      "value": "imagetest"
+    },
+    "imageVersionName": {
+      "value": "1.0.0"
+    }
+  }
+}

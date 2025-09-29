@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmName": {
+      "value": "vm-marketplace-encrypted"
+    },
+    "vmResourceGroup": {
+      "value": "YOUR-VM-RESOURCE-GROUP"
+    },
+    "computeGalleryName": {
+      "value": "central"
+    },
+    "computeGalleryResourceGroup": {
+      "value": "RG_Central"
+    },
+    "imageDefinitionName": {
+      "value": "imagetest"
+    },
+    "imageVersionName": {
+      "value": "1.0.0"
+    },
+    "replicaCount": {
+      "value": 1
+    }
+  }
+}
