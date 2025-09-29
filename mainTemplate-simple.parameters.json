@@ -3,25 +3,25 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "vmName": {
-      "value": "vm-trusted"
+      "value": "PLACEHOLDER_VMNAME"
     },
     "vmSize": {
-      "value": "Standard_D2s_v3"
+      "value": "PLACEHOLDER_VMSIZE"
     },
     "adminUsername": {
-      "value": "azureuser"
+      "value": "PLACEHOLDER_ADMINUSERNAME"
     },
     "adminPassword": {
-      "value": "P@ssw0rd123!"
+      "value": "PLACEHOLDER_ADMINPASSWORD"
     },
     "marketplaceImageOffer": {
-      "value": "WindowsServer"
+      "value": "PLACEHOLDER_IMAGEOFFER"
     },
     "marketplaceImagePublisher": {
-      "value": "MicrosoftWindowsServer"
+      "value": "PLACEHOLDER_IMAGEPUBLISHER"
     },
     "marketplaceImageSku": {
-      "value": "2022-datacenter-g2"
+      "value": "PLACEHOLDER_IMAGESKU"
     }
   }
 }

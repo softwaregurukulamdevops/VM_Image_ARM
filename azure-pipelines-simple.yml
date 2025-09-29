@@ -1,0 +1,429 @@
+# Azure DevOps Pipeline for ARM Template VM Deployment
+# This pipeline uses direct pipeline variables instead of variable groups
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - '*.json'
+      - '*.ps1'
+      - 'azure-pipelines.yml'
+
+pr: none
+
+# Pipeline variables - Configure these in Azure DevOps Pipeline Variables
+variables:
+  # Environment Configuration
+  - name: location
+    value: 'East US'
+  - name: resourceGroupName
+    value: 'RG_Central'
+  - name: galleryResourceGroupName
+    value: 'RG_AVD'
+  - name: serviceConnection
+    value: 'Azure-Production'  # Update with your service connection name
+  - name: subscriptionId
+    value: '3bc8f069-65c7-4d08-b8de-534c20e56c38'
+  
+  # VM Configuration
+  - name: vmName
+    value: 'vm-trusted'
+  - name: finalVMName
+    value: 'vm-production'
+  - name: vmSize
+    value: 'Standard_D2s_v3'
+  - name: adminUsername
+    value: 'azureuser'
+  # Note: adminPassword should be set as secret variable in pipeline settings
+  
+  # Marketplace Image Configuration
+  - name: marketplaceImageOffer
+    value: 'WindowsServer'
+  - name: marketplaceImagePublisher
+    value: 'MicrosoftWindowsServer'
+  - name: marketplaceImageSku
+    value: '2022-datacenter-g2'
+  
+  # Security and Gallery Configuration
+  - name: keyVaultName
+    value: 'kvimagetest'
+  - name: diskEncryptionKeyName
+    value: 'imagetest'
+  - name: computeGalleryName
+    value: 'central'
+  - name: imageDefinitionName
+    value: 'imagetest'
+  - name: newGalleryName
+    value: 'acg_avd'
+  - name: newImageDefinitionName
+    value: 'windows-trusted-launch'
+  - name: imageVersionName
+    value: '1.0.0'
+  
+  # Pipeline Control Flags
+  - name: setupPrerequisites
+    value: 'false'
+  - name: deployVM
+    value: 'true'
+  - name: captureImage
+    value: 'true'
+  - name: deployFromGallery
+    value: 'true'
+  - name: cleanupResources
+    value: 'false'
+  - name: cleanupIntermediateVM
+    value: 'false'
+  
+  # Dynamic naming
+  - name: BuildSuffix
+    value: $(Build.BuildNumber)
+
+# Build agent configuration
+pool:
+  vmImage: 'windows-latest'
+
+stages:
+- stage: Validate
+  displayName: 'Validate ARM Templates'
+  jobs:
+  - job: ValidateTemplates
+    displayName: 'Validate ARM Templates'
+    steps:
+    - checkout: self
+      displayName: 'Checkout Source Code'
+
+    - task: PowerShell@2
+      displayName: 'Validate ARM Templates'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Validating ARM Templates..." -ForegroundColor Green
+          Write-Host "Resource Group: $(resourceGroupName)" -ForegroundColor Cyan
+          Write-Host "Location: $(location)" -ForegroundColor Cyan
+          Write-Host "VM Name: $(vmName)-$(BuildSuffix)" -ForegroundColor Cyan
+          
+          # Check if template files exist
+          $templates = @(
+            'mainTemplate-simple.json',
+            'createImageToNewGallery.json',
+            'deployFinalVM.json'
+          )
+          
+          foreach ($template in $templates) {
+            if (Test-Path $template) {
+              Write-Host "✅ Found template: $template" -ForegroundColor Green
+              
+              # Basic JSON validation
+              try {
+                $content = Get-Content $template -Raw | ConvertFrom-Json
+                Write-Host "✅ Valid JSON: $template" -ForegroundColor Green
+              } catch {
+                Write-Error "❌ Invalid JSON in $template : $($_.Exception.Message)"
+                exit 1
+              }
+            } else {
+              Write-Error "❌ Template not found: $template"
+              exit 1
+            }
+          }
+          
+          Write-Host "All templates validated successfully!" -ForegroundColor Green
+
+- stage: SetupPrerequisites
+  displayName: 'Setup Prerequisites'
+  dependsOn: Validate
+  condition: and(succeeded(), eq(variables['setupPrerequisites'], 'true'))
+  jobs:
+  - job: SetupInfrastructure
+    displayName: 'Setup Key Vault and Encryption Resources'
+    steps:
+    - checkout: self
+
+    - task: PowerShell@2
+      displayName: 'Setup Prerequisites'
+      inputs:
+        targetType: 'filePath'
+        filePath: '$(System.DefaultWorkingDirectory)/Setup-Prerequisites.ps1'
+        arguments: >
+          -SubscriptionId "$(subscriptionId)"
+          -ResourceGroupName "$(resourceGroupName)"
+          -KeyVaultName "$(keyVaultName)"
+          -DiskEncryptionKeyName "$(diskEncryptionKeyName)"
+          -ComputeGalleryName "$(computeGalleryName)"
+          -ImageDefinitionName "$(imageDefinitionName)"
+          -Location "$(location)"
+
+- stage: DeployVM
+  displayName: 'Deploy Virtual Machine'
+  dependsOn: 
+    - Validate
+    - SetupPrerequisites
+  condition: and(succeeded(), eq(variables['deployVM'], 'true'))
+  jobs:
+  - job: DeployVirtualMachine
+    displayName: 'Deploy VM with Trusted Launch'
+    steps:
+    - checkout: self
+
+    - task: PowerShell@2
+      displayName: 'Update Parameters File with Variables'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Updating mainTemplate-simple.parameters.json with pipeline variables..." -ForegroundColor Yellow
+          
+          # Update mainTemplate-simple.parameters.json with variable values
+          $parametersPath = "$(System.DefaultWorkingDirectory)/mainTemplate-simple.parameters.json"
+          $parameters = Get-Content $parametersPath | ConvertFrom-Json
+          
+          # Update parameter values from pipeline variables
+          $parameters.parameters.vmName.value = "$(vmName)-$(BuildSuffix)"
+          $parameters.parameters.vmSize.value = "$(vmSize)"
+          $parameters.parameters.adminUsername.value = "$(adminUsername)"
+          $parameters.parameters.adminPassword.value = "$(adminPassword)"
+          $parameters.parameters.marketplaceImageOffer.value = "$(marketplaceImageOffer)"
+          $parameters.parameters.marketplaceImagePublisher.value = "$(marketplaceImagePublisher)"
+          $parameters.parameters.marketplaceImageSku.value = "$(marketplaceImageSku)"
+          
+          # Save updated parameters
+          $parameters | ConvertTo-Json -Depth 10 | Set-Content $parametersPath
+          Write-Host "✅ Updated parameters file with pipeline variable values" -ForegroundColor Green
+          
+          # Display updated values for verification
+          Write-Host "Updated Values:" -ForegroundColor Cyan
+          Write-Host "  VM Name: $(vmName)-$(BuildSuffix)" -ForegroundColor White
+          Write-Host "  VM Size: $(vmSize)" -ForegroundColor White
+          Write-Host "  Admin Username: $(adminUsername)" -ForegroundColor White
+          Write-Host "  Image: $(marketplaceImagePublisher)/$(marketplaceImageOffer)/$(marketplaceImageSku)" -ForegroundColor White
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Deploy VM with ARM Template'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(serviceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: '$(System.DefaultWorkingDirectory)/mainTemplate-simple.json'
+        csmParametersFile: '$(System.DefaultWorkingDirectory)/mainTemplate-simple.parameters.json'
+        deploymentMode: 'Incremental'
+        deploymentName: 'VM-Deployment-$(Build.BuildNumber)'
+        deploymentOutputs: 'vmDeploymentOutputs'
+
+    - task: PowerShell@2
+      displayName: 'Display Deployment Results'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "🎉 VM Deployment completed successfully!" -ForegroundColor Green
+          Write-Host "Deployment Name: VM-Deployment-$(Build.BuildNumber)" -ForegroundColor Cyan
+          
+          # Parse deployment outputs if available
+          if ($env:vmDeploymentOutputs) {
+            $outputs = $env:vmDeploymentOutputs | ConvertFrom-Json
+            Write-Host ""
+            Write-Host "📊 DEPLOYMENT SUMMARY:" -ForegroundColor Yellow
+            Write-Host "VM Resource ID: $($outputs.vmResourceId.value)" -ForegroundColor Cyan
+            Write-Host "Public IP Address: $($outputs.publicIPAddress.value)" -ForegroundColor Cyan
+            
+            if ($outputs.securityFeatures) {
+              Write-Host "Security Features: $($outputs.securityFeatures.value)" -ForegroundColor Green
+            }
+            
+            Write-Host ""
+            Write-Host "🌐 ACCESS INFORMATION:" -ForegroundColor Yellow
+            Write-Host "RDP: $($outputs.publicIPAddress.value):3389" -ForegroundColor Cyan
+            Write-Host "Username: $(adminUsername)" -ForegroundColor Cyan
+            
+            # Set pipeline variables for use in subsequent stages
+            Write-Host "##vso[task.setvariable variable=vmPublicIP;isOutput=true]$($outputs.publicIPAddress.value)"
+            Write-Host "##vso[task.setvariable variable=vmResourceId;isOutput=true]$($outputs.vmResourceId.value)"
+          }
+      name: 'vmResults'
+
+- stage: CaptureImage
+  displayName: 'Capture VM Image'
+  dependsOn: DeployVM
+  condition: and(succeeded(), eq(variables['captureImage'], 'true'))
+  jobs:
+  - job: CaptureVMImage
+    displayName: 'Capture VM Image to Gallery'
+    steps:
+    - checkout: self
+
+    - task: PowerShell@2
+      displayName: 'Update Gallery Parameters'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Updating createImageToNewGallery.parameters.json with pipeline variables..." -ForegroundColor Yellow
+          
+          # Update createImageToNewGallery.parameters.json with variable values
+          $parametersPath = "$(System.DefaultWorkingDirectory)/createImageToNewGallery.parameters.json"
+          $parameters = Get-Content $parametersPath | ConvertFrom-Json
+          
+          # Update parameter values from pipeline variables
+          $parameters.parameters.sourceVMName.value = "$(vmName)-$(BuildSuffix)"
+          $parameters.parameters.sourceVMResourceGroup.value = "$(resourceGroupName)"
+          $parameters.parameters.galleryName.value = "$(newGalleryName)"
+          $parameters.parameters.imageDefinitionName.value = "$(newImageDefinitionName)"
+          $parameters.parameters.imageVersionName.value = "$(imageVersionName)"
+          $parameters.parameters.location.value = "$(location)"
+          
+          # Save updated parameters
+          $parameters | ConvertTo-Json -Depth 10 | Set-Content $parametersPath
+          Write-Host "✅ Updated gallery parameters file with pipeline variable values" -ForegroundColor Green
+          
+          Write-Host "Gallery Configuration:" -ForegroundColor Cyan
+          Write-Host "  Source VM: $(vmName)-$(BuildSuffix)" -ForegroundColor White
+          Write-Host "  Gallery Name: $(newGalleryName)" -ForegroundColor White
+          Write-Host "  Image Definition: $(newImageDefinitionName)" -ForegroundColor White
+          Write-Host "  Image Version: $(imageVersionName)" -ForegroundColor White
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Create Image and Gallery'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(serviceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(galleryResourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: '$(System.DefaultWorkingDirectory)/createImageToNewGallery.json'
+        csmParametersFile: '$(System.DefaultWorkingDirectory)/createImageToNewGallery.parameters.json'
+        deploymentMode: 'Incremental'
+        deploymentName: 'Gallery-Deployment-$(Build.BuildNumber)'
+        deploymentOutputs: 'galleryDeploymentOutputs'
+
+    - task: PowerShell@2
+      displayName: 'Display Gallery Results'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "🎉 Image capture completed successfully!" -ForegroundColor Green
+          
+          if ($env:galleryDeploymentOutputs) {
+            $outputs = $env:galleryDeploymentOutputs | ConvertFrom-Json
+            Write-Host ""
+            Write-Host " GALLERY DEPLOYMENT SUMMARY:" -ForegroundColor Yellow
+            Write-Host "Gallery ID: $($outputs.galleryId.value)" -ForegroundColor Cyan
+            Write-Host "Image Definition ID: $($outputs.imageDefinitionId.value)" -ForegroundColor Cyan
+            Write-Host "Image Version ID: $($outputs.imageVersionId.value)" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host " Custom image is now available for deployment!" -ForegroundColor Green
+          }
+
+- stage: DeployFromGallery
+  displayName: 'Deploy VM from Gallery'
+  dependsOn: CaptureImage
+  condition: and(succeeded(), eq(variables['deployFromGallery'], 'true'))
+  jobs:
+  - job: DeployFromCustomImage
+    displayName: 'Deploy VM from Custom Gallery Image'
+    steps:
+    - checkout: self
+
+    - task: PowerShell@2
+      displayName: 'Update Final VM Parameters'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Updating deployFinalVM.parameters.json with pipeline variables..." -ForegroundColor Yellow
+          
+          # Update deployFinalVM.parameters.json with variable values
+          $parametersPath = "$(System.DefaultWorkingDirectory)/deployFinalVM.parameters.json"
+          $parameters = Get-Content $parametersPath | ConvertFrom-Json
+          
+          # Update parameter values from pipeline variables
+          $parameters.parameters.vmName.value = "$(finalVMName)-$(BuildSuffix)"
+          $parameters.parameters.adminUsername.value = "$(adminUsername)"
+          $parameters.parameters.adminPassword.value = "$(adminPassword)"
+          $parameters.parameters.vmSize.value = "$(vmSize)"
+          $parameters.parameters.location.value = "$(location)"
+          
+          # Save updated parameters
+          $parameters | ConvertTo-Json -Depth 10 | Set-Content $parametersPath
+          Write-Host "✅ Updated final VM parameters file with pipeline variable values" -ForegroundColor Green
+          
+          Write-Host "Final VM Configuration:" -ForegroundColor Cyan
+          Write-Host "  VM Name: $(finalVMName)-$(BuildSuffix)" -ForegroundColor White
+          Write-Host "  VM Size: $(vmSize)" -ForegroundColor White
+          Write-Host "  Admin Username: $(adminUsername)" -ForegroundColor White
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Deploy Final VM'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(serviceConnection)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: '$(System.DefaultWorkingDirectory)/deployFinalVM.json'
+        csmParametersFile: '$(System.DefaultWorkingDirectory)/deployFinalVM.parameters.json'
+        deploymentMode: 'Incremental'
+        deploymentName: 'FinalVM-Deployment-$(Build.BuildNumber)'
+        deploymentOutputs: 'finalVMDeploymentOutputs'
+
+    - task: PowerShell@2
+      displayName: 'Display Final VM Results'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "🎉 Final VM deployment completed successfully!" -ForegroundColor Green
+          
+          if ($env:finalVMDeploymentOutputs) {
+            $outputs = $env:finalVMDeploymentOutputs | ConvertFrom-Json
+            Write-Host ""
+            Write-Host "📊 FINAL DEPLOYMENT SUMMARY:" -ForegroundColor Yellow
+            Write-Host "Final VM Resource ID: $($outputs.vmResourceId.value)" -ForegroundColor Cyan
+            Write-Host "Final VM Public IP: $($outputs.publicIPAddress.value)" -ForegroundColor Cyan
+            
+            if ($outputs.securityFeatures) {
+              Write-Host "Security Features: $($outputs.securityFeatures.value)" -ForegroundColor Green
+            }
+            
+            Write-Host ""
+            Write-Host "🎉 COMPLETE WORKFLOW FINISHED!" -ForegroundColor Green
+            Write-Host "🌐 FINAL VM ACCESS:" -ForegroundColor Yellow
+            Write-Host "RDP: $($outputs.publicIPAddress.value):3389" -ForegroundColor Cyan
+            Write-Host "Username: $(adminUsername)" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "✅ Features Enabled:" -ForegroundColor Green
+            Write-Host "  • Custom gallery image deployed" -ForegroundColor Green
+            Write-Host "  • Trusted Launch security (Secure Boot + vTPM)" -ForegroundColor Green
+            Write-Host "  • Premium SSD storage" -ForegroundColor Green
+          }
+
+- stage: Cleanup
+  displayName: 'Cleanup Resources (Optional)'
+  dependsOn: 
+    - DeployVM
+    - CaptureImage
+    - DeployFromGallery
+  condition: and(always(), eq(variables['cleanupResources'], 'true'))
+  jobs:
+  - job: CleanupResources
+    displayName: 'Clean Up Temporary Resources'
+    steps:
+    - task: PowerShell@2
+      displayName: 'Remove Temporary VMs'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Starting cleanup of temporary resources..." -ForegroundColor Yellow
+          
+          # Remove the intermediate VM used for image capture (if specified)
+          if ("$(cleanupIntermediateVM)" -eq "true") {
+            Write-Host "Cleanup of intermediate VM: $(vmName)-$(BuildSuffix) would be performed here" -ForegroundColor Yellow
+            Write-Host "Note: Actual cleanup requires Azure PowerShell module and authentication" -ForegroundColor Cyan
+          }
+          
+          Write-Host "Cleanup stage completed" -ForegroundColor Green
