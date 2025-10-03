@@ -21,6 +21,43 @@ param(
     [Parameter(Mandatory=$false)]
     [string]$Location = "East US"
 )
+# Ensure script is run as Administrator
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Warning "Please run this script as Administrator!"
+    exit
+}
+
+# Install Azure CLI
+Write-Host "Installing Azure CLI..."
+$ProgressPreference = 'SilentlyContinue'
+Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi
+
+Start-Process msiexec.exe -Wait -ArgumentList "/I AzureCLI.msi /quiet"
+Remove-Item .\AzureCLI.msi
+
+# Verify az CLI install
+if (Get-Command az -ErrorAction SilentlyContinue) {
+    Write-Host "Azure CLI installed successfully.`n"
+} else {
+    Write-Error "Azure CLI installation failed."
+    exit 1
+}
+
+# Install Azure PowerShell module
+Write-Host "Installing Azure PowerShell module..."
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force
+
+# Install the Az module if it's not already installed
+if (-not (Get-Module -ListAvailable -Name Az)) {
+    Install-Module -Name Az -AllowClobber -Scope CurrentUser -Force
+} else {
+    Write-Host "Azure PowerShell module already installed."
+}
+
+# Import the module and verify
+Import-Module Az -ErrorAction Stop
+
+Write-Host "`nAzure CLI and Azure PowerShell module installation complete!"
 
 # Set error action preference
 $ErrorActionPreference = "Stop"
